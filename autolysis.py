@@ -52,8 +52,7 @@ if __name__ == "__main__":
 
 
     file = open(outputFile, "w")
-    prompt = f"give me a 3 paragraph summary of the data having filename {inputFile} nd columns as {data.columns}. The first few rows of data are {data.iloc[0:4, :].values}. Format it as a markdown file with appropriate title"
+    prompt = f"give me a 3 paragraph summary of the data having filename {inputFile} nd columns as {data.columns}. The first few rows of data are {data.iloc[0:4, :].values}. then add a detailed statistical analysis in 4 more paragraphs from the following info: {data.describe().to_string()} \nFormat it as a markdown file with appropriate title. Write in friendly tone."
     content = get_gpt4_mini_response(prompt)
     file.write(content)
     file.close()
-    

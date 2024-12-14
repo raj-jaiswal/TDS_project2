@@ -66,6 +66,7 @@ def get_response(api_url, headers, payload):
         response.raise_for_status()  # Raise an error for HTTP status codes 4xx/5xx
         result = response.json()
         # Extract and return the content of the response
+        # print('Monthly Cost:', result['monthlyCost'])
         return result['choices'][0]['message']['content']
     except requests.exceptions.RequestException as e:
         # Handle request errors gracefully
@@ -129,59 +130,148 @@ def plot_scatter(data, col1, col2, output_file="scatter_plot.png"):
     output_file (str): The file path to save the scatter plot. Default is 'scatter_plot.png'.
     """
     plt.figure(figsize=(5.12, 5.12))  # Set figure size to 512x512 pixels
-    sns.scatterplot(data=data, x=col1, y=col2)
-    plt.title(f"Scatter Plot: {col1} vs {col2}")
-    plt.xlabel(col1)
-    plt.ylabel(col2)
-    plt.savefig(output_file)
+    
+    # Create the scatter plot with enhanced visual elements
+    scatter_plot = sns.scatterplot(
+        data=data, x=col1, y=col2, hue=col1, size=col2, palette="viridis", legend="brief", alpha=0.8
+    )
+
+    # Add a title and axis labels
+    plt.title(f"Scatter Plot: {col1} vs {col2}", fontsize=14, weight='bold')
+    plt.xlabel(col1, fontsize=12)
+    plt.ylabel(col2, fontsize=12)
+
+    # Customize the legend
+    plt.legend(title="Legend", title_fontsize=10, fontsize=9, loc='best')
+
+    # Add annotations for the first few points
+    for i in range(min(10, len(data))):  # Annotate up to 10 points
+        plt.annotate(
+            text=f"({data[col1].iloc[i]:.2f}, {data[col2].iloc[i]:.2f})",
+            xy=(data[col1].iloc[i], data[col2].iloc[i]),
+            xytext=(5, 5),  # Offset for annotation text
+            textcoords='offset points',
+            fontsize=8,
+            color="black",
+            arrowprops=dict(arrowstyle="->", color="gray", lw=0.5)
+        )
+
+    # Apply grid for better readability
+    plt.grid(True, linestyle='--', alpha=0.6)
+
+    # Save the plot as a PNG file
+    plt.savefig(output_file, dpi=300, bbox_inches="tight")  # High-quality image
     plt.close()
 
-# Entry point of the script
-if __name__ == "__main__":
-    # Obtain input and output filenames from command-line arguments
-    inputFile = sys.argv[1]  # First argument: Input CSV file
-    outputFile = (sys.argv[2] + '/') if len(sys.argv) > 2 else ""  # Second argument: Output directory
+def read_csv_file(input_file):
+    """
+    Reads a CSV file and returns the DataFrame. Handles different encodings.
 
-    # Initialize a variable to store data from the CSV file
-    data = ''
+    Parameters:
+    input_file (str): Path to the input CSV file.
 
-    # Read the CSV file. Try different encodings to handle potential issues with file encoding.
+    Returns:
+    DataFrame: Loaded data from the CSV file.
+    """
     try:
-        data = pd.read_csv(inputFile, encoding="utf8")
+        return pd.read_csv(input_file, encoding="utf8")
     except:
         try:
-            data = pd.read_csv(inputFile, encoding="cp1252")
+            return pd.read_csv(input_file, encoding="cp1252")
         except:
-            data = pd.read_csv(inputFile)  # Default fallback if encoding fails
+            return pd.read_csv(input_file)
 
-    # Perform statistical analysis on the dataset 
-    key_stats = data.describe().loc[['mean', 'std', 'min', 'max']].to_string() # Generate a detailed description of numerical columns
-    corr_matrix = data.select_dtypes(include='number').corr()  # Generate the correlation matrix
-    significant_corr = corr_matrix[(corr_matrix.abs() > 0.5) & (corr_matrix < 1)].stack().to_string() # Filter the essential elements of the correlation matrix
+def perform_statistical_analysis(data):
+    """
+    Performs statistical analysis on the dataset.
 
-    # Select numeric columns for outlier detection
+    Parameters:
+    data (DataFrame): The dataset.
+
+    Returns:
+    tuple: Key statistics and significant correlations.
+    """
+    key_stats = data.describe().loc[['mean', 'std', 'min', 'max']].to_string()
+    corr_matrix = data.select_dtypes(include='number').corr()
+    significant_corr = corr_matrix[(corr_matrix.abs() > 0.5) & (corr_matrix < 1)].stack().to_string()
+    return key_stats, corr_matrix, significant_corr
+
+def detect_outliers(data):
+    """
+    Detects outliers in the dataset using Z-score.
+
+    Parameters:
+    data (DataFrame): The dataset.
+
+    Returns:
+    str: Top 10 outliers as a string.
+    """
     numeric_columns = data.select_dtypes(include=np.number).columns
-    outliers_zscore = detect_outliers_zscore(data, numeric_columns).head(10).to_string()  # Detect and list top 15 outliers
+    return detect_outliers_zscore(data, numeric_columns).head(10).to_string()
+
+def generate_markdown_summary(input_file, data, key_stats, significant_corr, outliers, col1, col2):
+    """
+    Generates a markdown summary of the dataset using GPT.
+
+    Parameters:
+    input_file (str): Path to the input CSV file.
+    data (DataFrame): The dataset.
+    key_stats (str): Key statistics of the dataset.
+    significant_corr (str): Significant correlations.
+    outliers (str): Detected outliers.
+    col1 (str): First column for scatter plot.
+    col2 (str): Second column for scatter plot.
+
+    Returns:
+    str: Generated markdown content.
+    """
+    prompt = f"""give me a detailed summary of the data having filename {input_file} and columns as {data.columns}. The first few rows of data are {data.iloc[0:4, :].values}. then add a detailed statistical analysis in form of paragraphs from the following info: {key_stats} and correlation matrix
+ {significant_corr} 
+ The outliers detected using z-score in the data are 
+ {outliers} 
+Format it as a markdown file with appropriate title and subheadings. A scatter plot is plotted between {col1} and {col2} named "scatter_plot.png" include it in the file with suitable description. Add some description of your interpretation of data. Add any other elements as needed. Write in friendly tone. Sequence the sections as Title, Overview, Data Structure, Statistical Analysis, Correlation Analysis, Outliers, Interpretation, Key Findings, Conclusion. Output only the markdown file without ```."""
+    return get_gpt4_mini_response(prompt)
+
+def write_to_file(file_path, content):
+    """
+    Writes content to a specified file.
+
+    Parameters:
+    file_path (str): Path to the output file.
+    content (str): Content to write.
+    """
+    with open(file_path, "w") as file:
+        file.write(content)
+
+def main():
+    """
+    Main function to execute the script.
+    """
+    # Obtain input and output filenames from command-line arguments
+    input_file = sys.argv[1]  # First argument: Input CSV file
+    output_dir = (sys.argv[2] + '/') if len(sys.argv) > 2 else ""  # Second argument: Output directory
+
+    # Read the CSV file
+    data = read_csv_file(input_file)
+
+    # Perform statistical analysis
+    key_stats, corr_matrix, significant_corr = perform_statistical_analysis(data)
+
+    # Detect outliers
+    outliers = detect_outliers(data)
 
     # Get the pair of columns for scatter plot
     col1, col2 = get_scatter_plot_columns(corr_matrix)
 
     # Plot and save the scatter plot
-    plot_scatter(data, col1, col2, output_file=(outputFile + "scatter_plot.png"))
+    plot_scatter(data, col1, col2, output_file=(output_dir + "scatter_plot.png"))
 
-    # Open the output file for writing
-    file = open(outputFile + "README.md", "w")
+    # Generate markdown summary
+    content = generate_markdown_summary(input_file, data, key_stats, significant_corr, outliers, col1, col2)
 
-    # Define a prompt for GPT-4o-mini to generate a markdown summary of the dataset
-    prompt = f"""give me a detailed summary of the data having filename {inputFile} and columns as {data.columns}. The first few rows of data are {data.iloc[0:4, :].values}. then add a detailed statistical analysis in form of paragraphs from the following info: {key_stats} and correlation matrix
- {significant_corr} 
- The outliers detected using z-score in the data are 
- {outliers_zscore} 
-Format it as a markdown file with appropriate title and subheadings. A scatter plot is plotted between {col1} and {col2} named "scatter_plot.png" include it in the file with suitable description. Add some description of your interpretation of data. Add any other elements as needed. Write in friendly tone. Sequence the sections as Title, Overview, Data Structure, Statistical Analysis, Correlation Analysis, Outliers, Interpretation, Key Findings, Conclusion."""
+    # Write the generated content to the output README file
+    write_to_file(output_dir + "README.md", content.replace("```", ""))
 
-    # Get the response from the model
-    content = get_gpt4_mini_response(prompt)
-
-    # Write the generated content to the output file
-    file.write(content)
-    file.close()
+# Entry point of the script
+if __name__ == "__main__":
+    main()

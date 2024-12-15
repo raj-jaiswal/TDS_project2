@@ -5,6 +5,7 @@
 #   "numpy",
 #   "seaborn",
 #   "matplotlib",
+#   "scikit-learn",
 # ]
 # ///
 # Script to add the required dependencies using uv
@@ -18,6 +19,8 @@ import requests
 import json
 import seaborn as sns
 import matplotlib.pyplot as plt
+from sklearn.linear_model import LinearRegression
+from sklearn.metrics import mean_squared_error, r2_score
 
 # Token to be used for AI Proxy. The token is expected to be set as an environment variable.
 token = os.environ["AIPROXY_TOKEN"]
@@ -66,7 +69,7 @@ def get_response(api_url, headers, payload):
         response.raise_for_status()  # Raise an error for HTTP status codes 4xx/5xx
         result = response.json()
         # Extract and return the content of the response
-        # print('Monthly Cost:', result['monthlyCost'])
+        print('Monthly Cost:', result['monthlyCost'])
         return result['choices'][0]['message']['content']
     except requests.exceptions.RequestException as e:
         # Handle request errors gracefully
@@ -197,6 +200,114 @@ def perform_statistical_analysis(data):
     significant_corr = corr_matrix[(corr_matrix.abs() > 0.5) & (corr_matrix < 1)].stack().to_string()
     return key_stats, corr_matrix, significant_corr
 
+def get_linear_regression_column_pairs(correlation_matrix, column_info):
+    """
+    Ask GPT-4o-mini to suggest two pairs of columns for linear regression.
+
+    Parameters:
+    - correlation_matrix (DataFrame): The correlation matrix of the dataset.
+    - column_info (list): List of column names in the dataset.
+
+    Returns:
+    - list of tuples: Two pairs of columns (e.g., [(col1, col2), (col3, col4)]).
+    """
+    corr_details = correlation_matrix.to_string()
+    prompt = f"""Based on the correlation matrix below and column names, suggest two pairs of columns for linear regression. 
+    Ensure that each pair has a moderate-to-strong correlation and represents a meaningful relationship:
+
+    Correlation Matrix:
+    {corr_details}
+
+    Available columns:
+    {column_info}
+
+    Output only the two pairs of columns as a Python list of tuples, e.g., [('col1', 'col2'), ('col3', 'col4')].
+    """
+    response = get_gpt4_mini_response(prompt)
+    try:
+        return eval(response.strip())  # Convert the string output into a Python object
+    except Exception as e:
+        print(f"Error parsing GPT-4o-mini response: {e}")
+        return []
+
+def run_linear_regression(data, col1, col2):
+    """
+    Run linear regression on two columns, handling missing or NaN values, and print the results.
+
+    Parameters:
+    - data (DataFrame): The dataset containing the columns.
+    - col1 (str): The predictor (independent variable).
+    - col2 (str): The target (dependent variable).
+
+    Returns:
+    - dict: A dictionary containing regression results.
+    """
+    # Drop rows with NaN values in the specified columns
+    filtered_data = data[[col1, col2]].dropna()
+
+    if filtered_data.empty:
+        print(f"No valid data available for regression between {col1} and {col2}.")
+        return {
+            "intercept": None,
+            "coefficient": None,
+            "mse": None,
+            "r2_score": None,
+        }
+
+    X = filtered_data[[col1]].values  # Independent variable
+    y = filtered_data[col2].values    # Dependent variable
+
+    model = LinearRegression()
+    model.fit(X, y)
+    y_pred = model.predict(X)
+
+    # Calculate metrics
+    mse = mean_squared_error(y, y_pred)
+    r2 = r2_score(y, y_pred)
+
+    results = {
+        "intercept": model.intercept_,
+        "coefficient": model.coef_[0],
+        "mse": mse,
+        "r2_score": r2,
+    }
+
+    return results
+
+def get_linear_regression_summary(results, col1, col2):
+    """
+    Prints a summary of linear regression results.
+
+    Parameters:
+    - results (dict): A dictionary containing regression results (intercept, coefficient, mse, r2_score).
+    - col1 (str): The predictor (independent variable).
+    - col2 (str): The target (dependent variable).
+    """
+    reg_result = ''
+    reg_result += (f"Linear Regression Summary for {col1} -> {col2}\n")
+    reg_result += ("=" * 50)
+    reg_result += (f"\nPredictor (Independent Variable): {col1}\n")
+    reg_result += (f"Target (Dependent Variable): {col2}\n")
+    reg_result += (f"Intercept: {results['intercept']:.4f}\n")
+    reg_result += (f"Coefficient: {results['coefficient']:.4f}\n")
+    reg_result += (f"Mean Squared Error (MSE): {results['mse']:.4f}\n")
+    reg_result += (f"R² Score: {results['r2_score']:.4f}\n")
+    reg_result += ("\nInterpretation:\n")
+    
+    if results["r2_score"] > 0.7:
+        reg_result += ("  - The model fits the data well, explaining a significant proportion of the variance.\n")
+    elif results["r2_score"] > 0.4:
+        reg_result += ("  - The model has a moderate fit; additional predictors might improve the results.\n")
+    else:
+        reg_result += ("  - The model has a weak fit; consider reevaluating the predictors or data quality.\n")
+    
+    if results["coefficient"] > 0:
+        reg_result += (f"  - There is a positive relationship between {col1} and {col2}. As {col1} increases, {col2} tends to increase.\n")
+    else:
+        reg_result += (f"  - There is a negative relationship between {col1} and {col2}. As {col1} increases, {col2} tends to decrease.\n")
+    reg_result += ("=" * 50 + "\n")
+    return reg_result
+
 def detect_outliers(data):
     """
     Detects outliers in the dataset using Z-score.
@@ -210,7 +321,7 @@ def detect_outliers(data):
     numeric_columns = data.select_dtypes(include=np.number).columns
     return detect_outliers_zscore(data, numeric_columns).head(10).to_string()
 
-def generate_markdown_summary(input_file, data, key_stats, significant_corr, outliers, col1, col2):
+def generate_markdown_summary(input_file, data, key_stats, significant_corr, outliers, col1, col2, reg_result):
     """
     Generates a markdown summary of the dataset using GPT.
 
@@ -239,9 +350,11 @@ def generate_markdown_summary(input_file, data, key_stats, significant_corr, out
 3. Discuss the **outliers** detected using the Z-score method:
     {outliers}
 4. Describe the **scatter plot** visualized between {col1} and {col2}, stored as "scatter_plot.png". Explain the relationship between the variables and any key trends or anomalies visible in the plot. Also, include the image in the markdown file.
-5. Emphasize the **implications** of the data and the analysis, focusing on actionable insights, potential patterns, or areas for further investigation.
-6. Present **key findings** in a bullet-point list for quick reference.
-7. Conclude with a brief summary of the analysis and its significance.
+5. Include following regression result in the summary: 
+    {reg_result}
+6. Emphasize the **implications** of the data and the analysis, focusing on actionable insights, potential patterns, or areas for further investigation.
+7. Present **key findings** in a bullet-point list for quick reference.
+8. Conclude with a brief summary of the analysis and its significance.
 
 ### Formatting:
 - Use friendly and engaging language suitable for a technical audience.
@@ -271,22 +384,32 @@ def main():
     output_dir = (sys.argv[2] + '/') if len(sys.argv) > 2 else ""  # Second argument: Output directory
 
     # Read the CSV file
-    data = read_csv_file(input_file)
+    csv_data = read_csv_file(input_file)
 
     # Perform statistical analysis
-    key_stats, corr_matrix, significant_corr = perform_statistical_analysis(data)
+    key_stats, corr_matrix, significant_corr = perform_statistical_analysis(csv_data)
 
     # Detect outliers
-    outliers = detect_outliers(data)
+    outliers = detect_outliers(csv_data)
 
     # Get the pair of columns for scatter plot
     col1, col2 = get_scatter_plot_columns(corr_matrix)
 
     # Plot and save the scatter plot
-    plot_scatter(data, col1, col2, output_file=(output_dir + "scatter_plot.png"))
+    plot_scatter(csv_data, col1, col2, output_file=(output_dir + "scatter_plot.png"))
+
+    # Run Linear Regression on significant columns based on correlation matrix
+    reg_column_pairs = get_linear_regression_column_pairs(corr_matrix, list(csv_data.columns))
+    
+    if len(reg_column_pairs) < 2:
+        reg_result = "Could not retrieve two valid column pairs for regression."
+    else:
+        for reg_col1, reg_col2 in reg_column_pairs:
+            result = run_linear_regression(csv_data, reg_col1, reg_col2)
+            reg_result = get_linear_regression_summary(result, reg_col1, reg_col2)
 
     # Generate markdown summary
-    content = generate_markdown_summary(input_file, data, key_stats, significant_corr, outliers, col1, col2)
+    content = generate_markdown_summary(input_file, csv_data, key_stats, significant_corr, outliers, col1, col2, reg_result)
 
     # Write the generated content to the output README file
     write_to_file(output_dir + "README.md", content.replace("```", ""))

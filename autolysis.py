@@ -425,7 +425,7 @@ def write_to_file(file_path, content):
     file_path (str): Path to the output file.
     content (str): Content to write.
     """
-    with open(file_path, "w") as file:
+    with open(file_path, "w", encoding="utf-8") as file:
         file.write(content)
 
 def main():

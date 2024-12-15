@@ -163,6 +163,7 @@ def plot_scatter(data, col1, col2, output_file="scatter_plot.png"):
     plt.savefig(output_file, dpi=300, bbox_inches="tight")  # High-quality image
     plt.close()
 
+
 def read_csv_file(input_file):
     """
     Reads a CSV file and returns the DataFrame. Handles different encodings.
@@ -225,11 +226,29 @@ def generate_markdown_summary(input_file, data, key_stats, significant_corr, out
     Returns:
     str: Generated markdown content.
     """
-    prompt = f"""give me a detailed summary of the data having filename {input_file} and columns as {data.columns}. The first few rows of data are {data.iloc[0:4, :].values}. then add a detailed statistical analysis in form of paragraphs from the following info: {key_stats} and correlation matrix
- {significant_corr} 
- The outliers detected using z-score in the data are 
- {outliers} 
-Format it as a markdown file with appropriate title and subheadings. A scatter plot is plotted between {col1} and {col2} named "scatter_plot.png" include it in the file with suitable description. Add some description of your interpretation of data. Add any other elements as needed. Write in friendly tone. Sequence the sections as Title, Overview, Data Structure, Statistical Analysis, Correlation Analysis, Outliers, Interpretation, Key Findings, Conclusion. Output only the markdown file without ```."""
+    prompt = f"""Generate a detailed and structured Markdown summary of the dataset with the following details:
+- **Filename**: {input_file}
+- **Columns**: {list(data.columns)}
+- **First Few Rows of Data**: {data.iloc[0:4, :].values}
+
+### Requirements:
+1. Provide a **concise overview** of the dataset, highlighting its purpose and any relevant context.
+2. Include a **statistical analysis** section with detailed insights based on:
+    - Summary statistics: {key_stats}
+    - Correlation matrix (only significant correlations): {significant_corr}
+3. Discuss the **outliers** detected using the Z-score method:
+    {outliers}
+4. Describe the **scatter plot** visualized between {col1} and {col2}, stored as "scatter_plot.png". Explain the relationship between the variables and any key trends or anomalies visible in the plot.
+5. Emphasize the **implications** of the data and the analysis, focusing on actionable insights, potential patterns, or areas for further investigation.
+6. Present **key findings** in a bullet-point list for quick reference.
+7. Conclude with a brief summary of the analysis and its significance.
+
+### Formatting:
+- Use friendly and engaging language suitable for a technical audience.
+- Include appropriate titles and subheadings: Title, Overview, Data Structure, Statistical Analysis, Correlation Analysis, Outliers, Scatter Plot Description, Interpretation, Key Findings, and Conclusion.
+- Reference the scatter plot as an integral part of the analysis.
+
+Ensure the Markdown output is cohesive, well-structured, and insightful, helping readers easily grasp the dataset's characteristics and implications."""
     return get_gpt4_mini_response(prompt)
 
 def write_to_file(file_path, content):
@@ -271,6 +290,7 @@ def main():
 
     # Write the generated content to the output README file
     write_to_file(output_dir + "README.md", content.replace("```", ""))
+
 
 # Entry point of the script
 if __name__ == "__main__":

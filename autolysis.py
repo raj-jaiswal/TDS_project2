@@ -238,7 +238,7 @@ def generate_markdown_summary(input_file, data, key_stats, significant_corr, out
     - Correlation matrix (only significant correlations): {significant_corr}
 3. Discuss the **outliers** detected using the Z-score method:
     {outliers}
-4. Describe the **scatter plot** visualized between {col1} and {col2}, stored as "scatter_plot.png". Explain the relationship between the variables and any key trends or anomalies visible in the plot.
+4. Describe the **scatter plot** visualized between {col1} and {col2}, stored as "scatter_plot.png". Explain the relationship between the variables and any key trends or anomalies visible in the plot. Also, include the image in the markdown file.
 5. Emphasize the **implications** of the data and the analysis, focusing on actionable insights, potential patterns, or areas for further investigation.
 6. Present **key findings** in a bullet-point list for quick reference.
 7. Conclude with a brief summary of the analysis and its significance.

@@ -19,6 +19,7 @@ import requests
 import json
 import seaborn as sns
 import base64
+import unicodedata
 import matplotlib.pyplot as plt
 from sklearn.linear_model import LinearRegression
 from sklearn.metrics import mean_squared_error, r2_score
@@ -434,6 +435,9 @@ def main():
     # Obtain input and output filenames from command-line arguments
     input_file = sys.argv[1]  # First argument: Input CSV file
     output_dir = (sys.argv[2] + '/') if len(sys.argv) > 2 else ""  # Second argument: Output directory
+
+    # Normalize file encoding to ascii to prevent errors in read_csv()
+    unicodedata.normalize('NFD', input_file).encode('ascii', 'ignore')
 
     # Read the CSV file
     csv_data = read_csv_file(input_file)
